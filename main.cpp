@@ -1,26 +1,93 @@
+//
+// Created by William on 10/05/2020.
+//
+
 #include <iostream>
 #include <vector>
 #include <queue>
 #include <fstream>
 #include <limits>
 #include <algorithm>
+#include <array>
+
+struct node {
+    int val;
+    int level;
+};
 
 struct path {
-    std::vector<int> pathVector;
-    double totalWeight;
-
-    path() {
-        totalWeight = 0;
-    }
+    std::vector<node*> pathVector;
+    double totalWeight = 0;
 };
 
-class pathCompare {
-    bool operator () (const path & pathOne, const path & pathTwo) {
-        return (pathOne.totalWeight < pathTwo.totalWeight);
-    }
-};
+void update(path ***paths, node **existingNodes, double **adjacencyMatrix, int vertices, node *currentNode, int currentLevel, int k, std::queue<node*> & toUpdate) {
+    // For each edge connected to the current node
+    for (int i=0;i<vertices;i++) {
+        if (adjacencyMatrix[currentNode->val][i] == 0) {
+            continue;
+        }
 
-int main(int argc, char **argv) {
+        if (existingNodes[i] == nullptr) {
+            // Allocate destination node if it doesn't exist yet
+            existingNodes[i] = new node;
+            existingNodes[i]->val = i;
+            existingNodes[i]->level = currentLevel;
+        }
+
+        for (int j=0;j<k;j++) {
+            if (paths[currentNode->val][j]->totalWeight == std::numeric_limits<double>::max()) {
+                break;
+            }
+            path *newPath = new path;
+            newPath->pathVector = paths[currentNode->val][j]->pathVector;
+            newPath->pathVector.push_back(existingNodes[i]);
+            newPath->totalWeight = paths[currentNode->val][j]->totalWeight+adjacencyMatrix[currentNode->val][i];
+
+            int pos = 0;
+            bool insert = true;
+            // Check if new path is better than the top-K paths already there
+            while (paths[i][pos]->totalWeight < newPath->totalWeight && paths[i][pos]->pathVector != newPath->pathVector) {
+                pos++;
+                if (pos >= k) {
+                    // Not better than top k
+                    insert = false;
+                    break;
+                }
+            }
+            if (paths[i][pos]->pathVector != newPath->pathVector) {
+                insert = false;
+            }
+            // If it is to be inserted, push paths behind back and then insert new path
+            if (insert) {
+                toUpdate.push(existingNodes[i]);
+                delete paths[i][k - 1];
+                for (int n = k - 2; n >= pos; n--) {
+                    paths[i][n + 1] = paths[i][n];
+                }
+                paths[i][pos] = newPath;
+            } else {
+                delete newPath;
+            }
+
+        }
+
+    }
+}
+
+void updateOnSameLevel(path ***paths, node **existingNodes, double **adjacencyMatrix, std::queue<node*> nodeQueue, int vertices, int currentLevel, int k) {
+    int queueSize = nodeQueue.size();
+    for (int i=0;i<queueSize;i++) {
+        node *currentNode = nodeQueue.front();
+        nodeQueue.pop();
+        for (int j=0;j < vertices; j++) {
+            std::queue<node*> toUpdate;
+            update(paths, existingNodes, adjacencyMatrix, vertices, currentNode, currentLevel, k, toUpdate);
+            updateOnSameLevel(paths, existingNodes, adjacencyMatrix, toUpdate, vertices, currentLevel, k);
+        }
+    }
+}
+
+int main (int argc, char **argv) {
 
     if (argc != 2) {
         std::cout << "Incorrect number of arguments." << std::endl;
@@ -68,61 +135,54 @@ int main(int argc, char **argv) {
         }
     }
 
-    std::vector<int> nodeQueue;
-    nodeQueue.push_back(source); // Push first node
-    std::vector<int> visitedNodes;
-    paths[source][0] = new path;
-    paths[source][0]->pathVector.push_back(source);
+    node *sourceNode = new node;
+    sourceNode->level = 0;
+    sourceNode->val = source;
+    paths[sourceNode->val][0]->totalWeight = 0;
+    paths[sourceNode->val][0]->pathVector.push_back(sourceNode);
 
+    std::queue<node*> nodeQueue;
+    node **existingNodes = new node* [vertices];
+    for (int i=0;i<vertices;i++) {
+        existingNodes[i] = nullptr;
+    }
+    nodeQueue.push(sourceNode);
+    int currentLevel = 0, membersInLevel = 1;
+    std::vector<node*> visitedNodes;
 
     while (!nodeQueue.empty()) {
+        node *currentNode = nodeQueue.front();
+        nodeQueue.pop();
 
-        double currentNodeWeight = paths[nodeQueue[0]][0]->totalWeight, pos = 0;
-
-        for (int i = 0; i < nodeQueue.size(); i++) {
-            if (paths[nodeQueue[i]][0]->totalWeight < currentNodeWeight) {
-                currentNodeWeight = paths[nodeQueue[i]][0]->totalWeight;
-                pos = i;
-            }
-        }
-        int currentNode = nodeQueue[pos];
-        nodeQueue.erase(nodeQueue.begin() + pos);
-
-        //std::cout << "Current Node: " << currentNode << std::endl;
-        for (int i = 0; i < vertices; i++) { // For each node connected to the current node
-            double currentWeight = adjacencyMatrix[currentNode][i]; // Get the connection weight
-            if (currentWeight == 0) {
-                // No edge
+        // For each edge connected to the current node
+        for (int i=0;i<vertices;i++) {
+            if (adjacencyMatrix[currentNode->val][i] == 0) {
                 continue;
             }
-            for (int j = 0; j < k; j++) { // For each path to the current node
-                //std::cout << "Loop B" << std::endl;
-                // Add each path as a path to the new node, with the new connection added
-                if (paths[currentNode][j]->totalWeight == std::numeric_limits<double>::max()) {
+
+            if (existingNodes[i] == nullptr) {
+                // Allocate destination node if it doesn't exist yet
+                existingNodes[i] = new node;
+                existingNodes[i]->val = i;
+                existingNodes[i]->level = currentLevel;
+            }
+
+            for (int j=0;j<k;j++) {
+                if (paths[currentNode->val][j]->totalWeight == std::numeric_limits<double>::max()) {
                     break;
                 }
-                if (std::find(paths[currentNode][j]->pathVector.begin(), paths[currentNode][j]->pathVector.end(), i) !=
-                    paths[currentNode][j]->pathVector.end()) {
-                    continue;
-                }
-
                 path *newPath = new path;
-                newPath->pathVector = paths[currentNode][j]->pathVector;
-                newPath->totalWeight = paths[currentNode][j]->totalWeight;
-                newPath->pathVector.push_back(i);
-                newPath->totalWeight += currentWeight;
-
-                if (i == destination) {
-                    std::cout << newPath->totalWeight << std::endl;
-                }
+                newPath->pathVector = paths[currentNode->val][j]->pathVector;
+                newPath->pathVector.push_back(existingNodes[i]);
+                newPath->totalWeight = paths[currentNode->val][j]->totalWeight+adjacencyMatrix[currentNode->val][i];
 
                 int pos = 0;
                 bool insert = true;
                 // Check if new path is better than the top-K paths already there
                 while (paths[i][pos]->totalWeight < newPath->totalWeight) {
-                    //std::cout << "Loop C" << std::endl;
                     pos++;
                     if (pos >= k) {
+                        // Not better than top k
                         insert = false;
                         break;
                     }
@@ -137,15 +197,23 @@ int main(int argc, char **argv) {
                 } else {
                     delete newPath;
                 }
+
             }
-            if (std::find(visitedNodes.begin(), visitedNodes.end(), i) ==
-                visitedNodes.end()) { // If node hasn't been popped before
-                nodeQueue.push_back(i);
-                visitedNodes.push_back(i);
+
+            if (std::find(visitedNodes.begin(), visitedNodes.end(), existingNodes[i]) == visitedNodes.end()) {
+                nodeQueue.push(existingNodes[i]);
+                visitedNodes.push_back(existingNodes[i]);
             }
         }
-    }
 
+        membersInLevel--;
+        if (membersInLevel == 0) {
+            membersInLevel = nodeQueue.size();
+            currentLevel++;
+            updateOnSameLevel(paths, existingNodes, adjacencyMatrix, nodeQueue, vertices, currentLevel, k);
+        }
+
+    }
 
     std::cout << "------OUTPUT-----" << std::endl;
     for (int i = 0; i < k; i++) {
@@ -154,7 +222,7 @@ int main(int argc, char **argv) {
         }
         std::cout << "Weight: " << paths[destination][i]->totalWeight << std::endl;
         for (auto j : paths[destination][i]->pathVector) {
-            std::cout << "->" << j;
+            std::cout << "->" << j->val;
         }
         std::cout << std::endl;
     }
