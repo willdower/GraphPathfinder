@@ -35,7 +35,7 @@ struct Edge {
 
 struct HashFunction {
     size_t operator () (const Edge & k) const {
-        return k.dest;
+        return k.weight;
     }
 };
 
@@ -186,7 +186,6 @@ std::vector<int> dijkstra(Graph *graph, int source, int sink, std::unordered_set
     currentPair.second = dist[source];
     nodeQueue.push(currentPair);
 
-    auto startTime = std::chrono::system_clock::now();
     while (!nodeQueue.empty()) {
         currentPair = nodeQueue.top();
         nodeQueue.pop();
@@ -203,9 +202,6 @@ std::vector<int> dijkstra(Graph *graph, int source, int sink, std::unordered_set
             }
         }
     }
-    auto endTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> timeTaken = endTime - startTime;
-    std::cout << timeTaken.count() << std::endl;
 
 
     int current = sink;
@@ -249,7 +245,6 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
     currentPair.second = dist[source];
     nodeQueue.push(currentPair);
 
-    auto startTime = std::chrono::system_clock::now();
     while (!nodeQueue.empty()) {
         currentPair = nodeQueue.top();
         nodeQueue.pop();
@@ -258,8 +253,8 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
         for (auto edge : graph->incidentEdges(currentPair.first)) {
             if (!visited.contains(edge.dest) && dist[edge.dest] > dist[edge.source] + edge.weight) {
                 bool check = true;
-                for (auto vertex : visited) {
-                    if (optimalPathSet[edge.dest].contains(vertex)) {
+                for (auto vertex : optimalPathSet[edge.dest]) {
+                    if (visited.contains(vertex)) {
                         check = false;
                         break;
                     }
@@ -289,9 +284,6 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
             }
         }
     }
-    auto endTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> timeTaken = endTime - startTime;
-    std::cout << timeTaken.count() << std::endl;
 
     int current = sink;
     std::vector<int>returnPath;
@@ -422,89 +414,6 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
     return validPaths;
 }
 
-std::vector<std::pair<double, std::vector<int>>> yen(Graph *graph, int source, int sink, int k) {
-
-    std::vector<std::pair<double, std::vector<int>>> validPaths;
-    std::vector<std::pair<double, std::vector<int>>> candidatePaths;
-
-    std::unordered_set<int> visited;
-
-    std::vector<int> optimalPath = dijkstra(graph, source, sink, visited);
-
-    std::pair<double, std::vector<int>> optimalPathPair;
-    optimalPathPair.first = graph->getPathLength(optimalPath, source);
-    optimalPathPair.second = optimalPath;
-    validPaths.push_back(optimalPathPair);
-
-    auto editableGraph = new Graph(graph);
-    for (int i=1;i<=k;i++) {
-        for (int j=0;j<=validPaths[i-1].second.size() - 2;j++) {
-            visited.clear();
-            int spurNode = validPaths[i-1].second[j];
-            std::vector<int> rootPath = validPaths[i-1].second;
-            auto pos = std::find(rootPath.begin(), rootPath.end(), spurNode);
-            rootPath.erase(pos+1, rootPath.end());
-
-            for (auto path : validPaths) {
-                auto newPos = std::find(path.second.begin(), path.second.end(), spurNode);
-                path.second.erase(newPos+1, path.second.end());
-                if (rootPath == path.second) {
-                    int start = *newPos;
-                    int dest = *(newPos+1);
-                    editableGraph->removeEdge(start, dest);
-                }
-            }
-
-            for (auto vertex : rootPath) {
-                if (vertex == spurNode) {
-                    break;
-                }
-                visited.insert(vertex);
-            }
-
-            auto spurPath = dijkstra(editableGraph, spurNode, sink, visited);
-            delete editableGraph;
-            editableGraph = new Graph(graph);
-            if (spurPath.empty()) {
-                continue;
-            }
-
-            auto totalPath = rootPath;
-            for (auto node : spurPath) {
-                if (node == spurNode) {
-                    continue;
-                }
-                totalPath.push_back(node);
-            }
-            bool present = false;
-            for (auto const & path : candidatePaths) {
-                if (totalPath == path.second) {
-                    present = true;
-                    break;
-                }
-            }
-
-            if (!present) {
-                std::pair<double, std::vector<int>> totalPathPair;
-                totalPathPair.first = editableGraph->getPathLength(totalPath, source);
-                totalPathPair.second = totalPath;
-                candidatePaths.push_back(totalPathPair);
-            }
-        }
-
-        if (candidatePaths.empty()) {
-            break;
-        }
-
-        std::sort(candidatePaths.begin(), candidatePaths.end(), PathComparator());
-
-        validPaths.push_back(candidatePaths.front());
-        candidatePaths.erase(candidatePaths.begin());
-
-    }
-    return validPaths;
-}
-
 void printPath(std::vector<int> const & path) {
     for (auto node : path) {
         std::cout << "->" << node;
@@ -555,26 +464,10 @@ int main (int argc, char **argv) {
 
     int num = 0;
 
-    /*auto startYen = std::chrono::system_clock::now();
-    auto pathPairs = yen(originalGraph, source, destination, k-1);
-    auto endYen = std::chrono::system_clock::now();
-    std::chrono::duration<double> yenTimeTaken = endYen - startYen;*/
-
     auto startNewYen = std::chrono::system_clock::now();
     auto result = newYen(originalGraph, reverseGraph, source, destination, k-1);
     auto endNewYen = std::chrono::system_clock::now();
     std::chrono::duration<double> newYenTimeTaken = endNewYen - startNewYen;
-
-    /*std::cout << yenTimeTaken.count() << std::endl;
-    for (auto const & pathPair : pathPairs) {
-        num++;
-        if (num == 0) {
-            continue;
-        }
-        std::cout << "Yen K = " << num << ": " << pathPair.first << " ";
-        printPath(pathPair.second);
-        std::cout << std::endl;
-    }*/
 
     std::cout << newYenTimeTaken.count() << std::endl;
     num = 0;
@@ -583,7 +476,7 @@ int main (int argc, char **argv) {
         if (num == 0) {
             continue;
         }
-        std::cout << "New Yen K = " << num << ": " << pathPair.first << " ";
+        std::cout << "K = " << num << ": " << pathPair.first << " ";
         printPath(pathPair.second);
         std::cout << std::endl;
     }
