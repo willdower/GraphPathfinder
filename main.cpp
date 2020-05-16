@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <chrono>
 
+/// Struct that represents an edge in the graph
 struct Edge {
     int source;
     int dest;
@@ -32,16 +33,18 @@ struct Edge {
     }
 };
 
-
+/// Hash function for unordered_sets holding edges
 struct HashFunction {
     size_t operator () (const Edge & k) const {
         return k.weight;
     }
 };
 
+/// Class that represents a graph
 class Graph {
 public:
 
+    /// Returns the incident edges for a vertex
     std::unordered_set<Edge, HashFunction> incidentEdges(int vertex) {
         return adjacencySet[vertex];
     }
@@ -87,27 +90,45 @@ public:
         return totalCost;
     }
 
+    /// Remove all edges that have vertex as a source
     void removeLeavingEdges(int vertex) {
         adjacencySet[vertex].clear();
+    }
+
+    /// Update the maximum weight of any edge in the graph
+    void updateMaxWeight(double weight) {
+        if (weight > maxWeight) {
+            maxWeight = weight;
+        }
+    }
+
+    /// Get the maximum weight of any edge in the graph
+    double getMaxWeight() {
+        return maxWeight;
     }
 
     Graph(int pVertices, int pEdges) {
         vertices = pVertices;
         edges = pEdges;
+        maxWeight = std::numeric_limits<double>::max();
     }
 
     explicit Graph(Graph *graph) {
         adjacencySet = graph->adjacencySet;
         vertices = graph->vertices;
         edges = graph->edges;
+        maxWeight = graph->maxWeight;
     }
 
 private:
     std::unordered_map<int, std::unordered_set<Edge, HashFunction>> adjacencySet;
     int vertices;
     int edges;
+    /// The maximum weight of any edge in the graph
+    double maxWeight;
 };
 
+/// Used to compare vertex pairs which have an associated dist (in Dijkstra)
 class VertexComparator {
 public:
     bool operator () (std::pair<int, double> a, std::pair<int, double> b) {
@@ -115,6 +136,7 @@ public:
     }
 };
 
+/// Used to compare path pairs which have their length and the path itself
 class PathComparator {
 public:
     bool operator () (std::pair<double, std::vector<int>> const & a, std::pair<double, std::vector<int>> const & b) {
@@ -122,6 +144,7 @@ public:
     }
 };
 
+/// Get optimal paths from each vertex to the destination
 int *getOptimals(Graph *graph, int source, int sink) {
     source = sink;
 
@@ -226,7 +249,8 @@ std::vector<int> dijkstra(Graph *graph, int source, int sink, std::unordered_set
     return returnPath;
 }
 
-std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordered_set<int> & visited, std::pair<double, std::vector<int>> *optimalPaths, std::unordered_set<int> *optimalPathSet) {
+/// An innovated Dijkstra that saves time by autocompleting paths
+std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordered_set<int> & visited, std::pair<double, std::vector<int>> *optimalPaths, std::unordered_set<int> *optimalPathSet, bool useShortcut) {
 
     auto dist = new double [graph->getNumberOfVertices()];
     auto prev = new int [graph->getNumberOfVertices()];
@@ -240,6 +264,7 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
 
     dist[source] = 0;
 
+    // Use pair to store path with its weight
     std::pair<int, double> currentPair;
     currentPair.first = source;
     currentPair.second = dist[source];
@@ -259,16 +284,7 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
                         break;
                     }
                 }
-                if (!check) {
-                    // Optimal path from this node to the sink contains visited or removed nodes
-                    // Regular Dijkstra behaviour
-                    dist[edge.dest] = dist[edge.source] + edge.weight;
-                    prev[edge.dest] = edge.source;
-                    currentPair.first = edge.dest;
-                    currentPair.second = dist[edge.dest];
-                    nodeQueue.push(currentPair);
-                }
-                else {
+                if (check && useShortcut) {
                     // Optimal path is a successful one
                     // Clears all leaving edges and only puts optimal one to destination
                     dist[edge.dest] = dist[edge.source] + edge.weight;
@@ -281,10 +297,27 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
                         nodeQueue.push(currentPair);
                     }
                 }
+                else {
+                    // Optimal path from this node to the sink contains visited or removed nodes
+                    // Regular Dijkstra behaviour
+                    dist[edge.dest] = dist[edge.source] + edge.weight;
+                    prev[edge.dest] = edge.source;
+                    currentPair.first = edge.dest;
+                    currentPair.second = dist[edge.dest];
+                    nodeQueue.push(currentPair);
+                }
             }
         }
+
+        if (currentPair.second > graph->getMaxWeight() && useShortcut) {
+            // We have just popped an optimal path which has weight larger than any real edge
+            // This means only optimal paths left in queue and this must be the best one
+            break;
+        }
+
     }
 
+    // Reconstruct path
     int current = sink;
     std::vector<int>returnPath;
     while (current != source) {
@@ -309,10 +342,12 @@ std::vector<int> quickDijkstra(Graph *graph, int source, int sink, std::unordere
     return returnPath;
 }
 
-std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *reverseGraph, int source, int sink, int k) {
+std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *reverseGraph, int source, int sink, int k, bool useShortcut) {
     int *optimalPrevs = getOptimals(reverseGraph, source, sink);
 
+    // Construct the optimal paths from optimalPrevs
     auto *optimalPaths = new std::pair<double, std::vector<int>>[graph->getNumberOfVertices()];
+    // Also have sets for O(1) lookup of vertices present in paths
     auto *optimalPathSets = new std::unordered_set<int>[graph->getNumberOfVertices()];
     for (int i=0;i<graph->getNumberOfVertices();i++) {
         int current = i;
@@ -336,6 +371,7 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
 
     std::vector<int> optimalPath = dijkstra(graph, source, sink, visited);
 
+    // Use pair to store path with its weight
     std::pair<double, std::vector<int>> optimalPathPair;
     optimalPathPair.first = graph->getPathLength(optimalPath, source);
     optimalPathPair.second = optimalPath;
@@ -345,11 +381,14 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
     for (int i=1;i<=k;i++) {
         for (int j=0;j<=validPaths[i-1].second.size() - 2;j++) {
             visited.clear();
+            // Pick node to branch off
             int spurNode = validPaths[i-1].second[j];
             std::vector<int> rootPath = validPaths[i-1].second;
             auto pos = std::find(rootPath.begin(), rootPath.end(), spurNode);
+            // Remove everything after this node for root path
             rootPath.erase(pos+1, rootPath.end());
 
+            // Remove edges leaving spurNode already used in previous paths as options
             for (auto path : validPaths) {
                 auto newPos = std::find(path.second.begin(), path.second.end(), spurNode);
                 path.second.erase(newPos+1, path.second.end());
@@ -360,8 +399,9 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
                 }
             }
 
-            auto spurPath = quickDijkstra(editableGraph, spurNode, sink, visited, optimalPaths, optimalPathSets);
+            auto spurPath = quickDijkstra(editableGraph, spurNode, sink, visited, optimalPaths, optimalPathSets, useShortcut);
 
+            // Flip negative back and insert optimal path nodes
             auto it = spurPath.end() - 2;
             if (*it < 0) {
                 spurPath.pop_back();
@@ -372,12 +412,14 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
                 }
             }
 
+            // Reset graph
             delete editableGraph;
             editableGraph = new Graph(graph);
             if (spurPath.empty()) {
                 continue;
             }
 
+            // Combine root and spur paths
             auto totalPath = rootPath;
             for (auto node : spurPath) {
                 if (node == spurNode) {
@@ -385,6 +427,7 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
                 }
                 totalPath.push_back(node);
             }
+            // Do not keep path if it has already been found as a candidate
             bool present = false;
             for (auto const & path : candidatePaths) {
                 if (totalPath == path.second) {
@@ -401,6 +444,7 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
             }
         }
 
+        // If no candidate paths found, all paths from source to destination have already been found and it can be stopped
         if (candidatePaths.empty()) {
             break;
         }
@@ -411,6 +455,11 @@ std::vector<std::pair<double, std::vector<int>>> newYen(Graph *graph, Graph *rev
         candidatePaths.erase(candidatePaths.begin());
 
     }
+
+    delete [] optimalPaths;
+    delete [] optimalPathSets;
+    delete [] optimalPrevs;
+
     return validPaths;
 }
 
@@ -450,9 +499,12 @@ int main (int argc, char **argv) {
         input >> weight;
         if (originalGraph->getEdge(start, end) == Edge(-1, -1, 0)) {
             originalGraph->insertEdge(start, end, weight);
+            originalGraph->updateMaxWeight(weight);
         }
+        // Reverse source and destination of each edge for the reverse graph
         if (reverseGraph->getEdge(end, start) == Edge(-1, -1, 0)) {
             reverseGraph->insertEdge(end, start, weight);
+            reverseGraph->updateMaxWeight(weight);
         }
     }
 
@@ -464,12 +516,13 @@ int main (int argc, char **argv) {
 
     int num = 0;
 
+    std::cout << "Running innovated Yen's, please wait..." << std::endl;
     auto startNewYen = std::chrono::system_clock::now();
-    auto result = newYen(originalGraph, reverseGraph, source, destination, k-1);
+    auto result = newYen(originalGraph, reverseGraph, source, destination, k-1, true);
     auto endNewYen = std::chrono::system_clock::now();
     std::chrono::duration<double> newYenTimeTaken = endNewYen - startNewYen;
 
-    std::cout << newYenTimeTaken.count() << std::endl;
+    std::cout << "Time taken with innovated algorithm: " << newYenTimeTaken.count() << std::endl;
     num = 0;
     for (auto const & pathPair : result) {
         num++;
@@ -478,7 +531,23 @@ int main (int argc, char **argv) {
         }
         std::cout << "K = " << num << ": " << pathPair.first << " ";
         printPath(pathPair.second);
-        std::cout << std::endl;
+    }
+
+    std::cout << "Running original Yen's, please wait..." << std::endl;
+    auto startOldYen = std::chrono::system_clock::now();
+    auto oldResult = newYen(originalGraph, reverseGraph, source, destination, k-1, false);
+    auto endOldYen = std::chrono::system_clock::now();
+    std::chrono::duration<double> oldYenTimeTaken = endOldYen - startOldYen;
+
+    std::cout << "Time taken without innovated algorithm: " << oldYenTimeTaken.count() << std::endl;
+    num = 0;
+    for (auto const & pathPair : oldResult) {
+        num++;
+        if (num == 0) {
+            continue;
+        }
+        std::cout << "K = " << num << ": " << pathPair.first << " ";
+        printPath(pathPair.second);
     }
 
     delete originalGraph;
